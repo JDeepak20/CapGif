@@ -116,6 +116,7 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 NSAlert(error: error).runModal()
             }
             stopDurationTimer()
+            hideSelectionIndicator()
             isRecording = false
         }
     }
@@ -208,6 +209,7 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         DispatchQueue.main.async {
             self.isRecording = false
+            self.hideSelectionIndicator()
             NSAlert(error: error).runModal()
         }
     }
