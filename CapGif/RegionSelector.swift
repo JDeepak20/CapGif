@@ -51,10 +51,20 @@ final class SelectionCaptureView: NSView {
 
     private var startLocal: CGPoint?
     private var currentLocal: CGPoint?
+    private var startScreen: CGPoint?
+    private var currentScreen: CGPoint?
 
     private var selectionRectInView: NSRect? {
         guard let a = startLocal, let b = currentLocal else { return nil }
         return NSRect(x: min(a.x, b.x),
+                      y: min(a.y, b.y),
+                      width: abs(a.x - b.x),
+                      height: abs(a.y - b.y))
+    }
+
+    private var selectionRectOnScreen: CGRect? {
+        guard let a = startScreen, let b = currentScreen else { return nil }
+        return CGRect(x: min(a.x, b.x),
                       y: min(a.y, b.y),
                       width: abs(a.x - b.x),
                       height: abs(a.y - b.y))
@@ -71,26 +81,38 @@ final class SelectionCaptureView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func mouseDown(with event: NSEvent) {
-        let local = convert(event.locationInWindow, from: nil)
+        guard let window else { return }
+
+        let windowPoint = event.locationInWindow
+        let local = convert(windowPoint, from: nil)
+        let screenPoint = window.convertPoint(toScreen: windowPoint)
+
         startLocal = local
         currentLocal = local
+        startScreen = screenPoint
+        currentScreen = screenPoint
         needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
-        currentLocal = convert(event.locationInWindow, from: nil)
+        guard let window else { return }
+
+        let windowPoint = event.locationInWindow
+        currentLocal = convert(windowPoint, from: nil)
+        currentScreen = window.convertPoint(toScreen: windowPoint)
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
-        currentLocal = convert(event.locationInWindow, from: nil)
+        guard let window else { return }
 
-        guard let rectInView = selectionRectInView,
-              let window = self.window else {
+        let windowPoint = event.locationInWindow
+        currentLocal = convert(windowPoint, from: nil)
+        currentScreen = window.convertPoint(toScreen: windowPoint)
+
+        guard selectionRectInView != nil,
+              let rectOnScreen = selectionRectOnScreen else {
             onCancel?()
             return
         }
-
-        let rectInWindow = convert(rectInView, to: nil)
-        let rectOnScreen = window.convertToScreen(rectInWindow)
 
         if rectOnScreen.width < 3 || rectOnScreen.height < 3 {
             onCancel?()
