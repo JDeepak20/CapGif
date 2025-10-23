@@ -63,6 +63,7 @@ final class SelectionCaptureView: NSView {
     private var currentLocal: CGPoint?
     private var startScreen: CGPoint?
     private var currentScreen: CGPoint?
+    private var stopPanel: StopFloatingPanel?
 
     private lazy var startButton: NSButton = {
         let button = NSButton(title: "Start", target: self, action: #selector(startTapped))
@@ -198,20 +199,37 @@ final class SelectionCaptureView: NSView {
             return e
         }
     }
-    deinit { if let escMonitor { NSEvent.removeMonitor(escMonitor) } }
+    deinit {
+        if let escMonitor { NSEvent.removeMonitor(escMonitor) }
+        dismissStopPanel()
+    }
+
+    private func presentStopPanel(for rect: CGRect) {
+        dismissStopPanel()
+        let panel = StopFloatingPanel { [weak self] in
+            self?.handleStop()
+        }
+        stopPanel = panel
+        panel.show(relativeTo: rect)
+    }
+
+    private func dismissStopPanel() {
+        stopPanel?.close()
+        stopPanel = nil
+    }
 
     private func showControlButtons() {
         guard let rect = selectionRectInView else { return }
-        updateButtonStates()
-        positionButtons(around: rect)
+        isRecording = false
         startButton.isHidden = false
-        stopButton.isHidden = false
+        positionButtons(around: rect)
     }
 
     private func hideControlButtons() {
         startButton.isHidden = true
         stopButton.isHidden = true
         isRecording = false
+        dismissStopPanel()
     }
 
     override func layout() {
@@ -225,10 +243,13 @@ final class SelectionCaptureView: NSView {
         if isRecording {
             startButton.title = "Recording…"
             startButton.isEnabled = false
-            stopButton.isEnabled = true
+            startButton.isHidden = true
+            stopButton.isHidden = true
         } else {
             startButton.title = "Start"
             startButton.isEnabled = true
+            startButton.isHidden = false
+            stopButton.isHidden = true
             stopButton.isEnabled = false
         }
     }
@@ -246,7 +267,10 @@ final class SelectionCaptureView: NSView {
         startButton.frame.size = NSSize(width: buttonWidth, height: buttonHeight)
         stopButton.frame.size = NSSize(width: buttonWidth, height: buttonHeight)
 
-        let totalWidth = buttonWidth * 2 + horizontalSpacing
+        let visibleButtons = [startButton, stopButton].filter { !$0.isHidden }
+        guard !visibleButtons.isEmpty else { return }
+
+        let totalWidth = CGFloat(visibleButtons.count) * buttonWidth + CGFloat(max(0, visibleButtons.count - 1)) * horizontalSpacing
 
         var originX = rect.midX - totalWidth / 2
         originX = max(20, min(originX, bounds.width - totalWidth - 20))
@@ -256,20 +280,102 @@ final class SelectionCaptureView: NSView {
             originY = rect.minY + verticalSpacing
         }
 
-        startButton.setFrameOrigin(NSPoint(x: originX, y: originY))
-        stopButton.setFrameOrigin(NSPoint(x: originX + buttonWidth + horizontalSpacing, y: originY))
+        for (index, button) in visibleButtons.enumerated() {
+            let x = originX + CGFloat(index) * (buttonWidth + horizontalSpacing)
+            button.setFrameOrigin(NSPoint(x: x, y: originY))
+        }
     }
 
     @objc private func startTapped() {
         guard !isRecording else { return }
+        guard let rect = selectionRectOnScreen else { return }
         isRecording = true
+        presentStopPanel(for: rect)
+        window?.orderOut(nil)
         onStart?()
     }
 
     @objc private func stopTapped() {
+        handleStop()
+    }
+
+    private func handleStop() {
         guard isRecording else { return }
         isRecording = false
-        updateButtonStates()
+        dismissStopPanel()
         onStop?()
+    }
+}
+
+private final class StopFloatingPanel: NSPanel {
+    private let stopHandler: () -> Void
+    private let stopButton: NSButton
+
+    init(stopHandler: @escaping () -> Void) {
+        self.stopHandler = stopHandler
+        let contentRect = NSRect(origin: .zero, size: NSSize(width: 140, height: 56))
+        self.stopButton = NSButton(title: "Stop", target: nil, action: nil)
+        super.init(contentRect: contentRect, styleMask: [.borderless], backing: .buffered, defer: false)
+        isOpaque = false
+        backgroundColor = .clear
+        level = .floating
+        hasShadow = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+
+        let container = NSVisualEffectView(frame: contentRect)
+        container.material = .popover
+        container.state = .active
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 12
+        contentView = container
+
+        stopButton.target = self
+        stopButton.action = #selector(stopPressed)
+        stopButton.bezelStyle = .rounded
+        stopButton.font = .systemFont(ofSize: 16, weight: .semibold)
+        stopButton.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stopButton)
+
+        NSLayoutConstraint.activate([
+            stopButton.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            stopButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            stopButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 80)
+        ])
+
+        container.layoutSubtreeIfNeeded()
+        let fittingSize = container.fittingSize
+        setContentSize(fittingSize)
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    func show(relativeTo rect: CGRect) {
+        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: rect.midX, y: rect.midY)) }
+        let visibleFrame = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: rect.origin.x, y: rect.origin.y, width: rect.width, height: rect.height)
+
+        let size = frame.size
+        let horizontalPadding: CGFloat = 16
+        let verticalPadding: CGFloat = 16
+
+        var originX = rect.midX - size.width / 2
+        originX = max(visibleFrame.minX + horizontalPadding, min(originX, visibleFrame.maxX - size.width - horizontalPadding))
+
+        var originY = rect.maxY + verticalPadding
+        if originY + size.height > visibleFrame.maxY - verticalPadding {
+            originY = rect.minY - size.height - verticalPadding
+        }
+        if originY < visibleFrame.minY + verticalPadding {
+            originY = visibleFrame.minY + verticalPadding
+        }
+
+        setFrame(NSRect(x: originX, y: originY, width: size.width, height: size.height), display: true)
+        orderFrontRegardless()
+    }
+
+    @objc private func stopPressed() {
+        stopHandler()
     }
 }
