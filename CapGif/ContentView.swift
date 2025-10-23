@@ -221,6 +221,8 @@ final class StreamOutput: NSObject, SCStreamOutput {
 struct ContentView: View {
     @StateObject private var recorder = Recorder()
     @State private var lastSaveURL: URL?
+    @State private var appWindow: NSWindow?
+    @State private var selectionOverlayActive = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -230,18 +232,28 @@ struct ContentView: View {
 
             HStack(spacing: 12) {
                 Button("Select Region") {
-                    RegionSelector.present { rect in
+                    selectionOverlayActive = true
+                    hideMainWindow()
+                    RegionSelector.present(onSelection: { rect in
                         recorder.selectedRect = rect
-                    } onCancel: {
-                        // cancelled
-                    }
+                    }, onCancel: {
+                        selectionOverlayActive = false
+                        restoreMainWindow()
+                    }, onStart: {
+                        recorder.start()
+                    }, onStop: {
+                        selectionOverlayActive = false
+                        recorder.stop()
+                        restoreMainWindow()
+                    })
                 }
                 .keyboardShortcut("s", modifiers: [.command])
+                .disabled(selectionOverlayActive || recorder.isRecording)
 
                 Button(recorder.isRecording ? "Recording…" : "Start") {
                     recorder.start()
                 }
-                .disabled(recorder.selectedRect == nil || recorder.isRecording)
+                .disabled(recorder.selectedRect == nil || recorder.isRecording || selectionOverlayActive)
 
                 Button("Stop") { recorder.stop() }
                     .disabled(!recorder.isRecording)
@@ -272,6 +284,7 @@ struct ContentView: View {
         }
         .padding(20)
         .frame(width: 520, height: 300)
+        .background(WindowAccessor(window: $appWindow))
     }
 
     private func save() {
@@ -293,5 +306,40 @@ struct ContentView: View {
 
     private func pretty(_ r: CGRect) -> String {
         "x:\(Int(r.origin.x)) y:\(Int(r.origin.y)) w:\(Int(r.width)) h:\(Int(r.height))"
+    }
+}
+
+private struct WindowAccessor: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.window = view.window
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            self.window = nsView.window
+        }
+    }
+}
+
+private extension ContentView {
+    func hideMainWindow() {
+        let window = appWindow ?? NSApp.keyWindow
+        window?.orderOut(nil)
+        if appWindow == nil { appWindow = window }
+    }
+
+    func restoreMainWindow() {
+        guard let window = appWindow ?? NSApp.keyWindow else { return }
+        DispatchQueue.main.async {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        if appWindow == nil { appWindow = window }
     }
 }
