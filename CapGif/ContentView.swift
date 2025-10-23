@@ -28,6 +28,9 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
     @Published var isRecording = false
     @Published var fps: Double = 10
     @Published var durationSeconds: Double = 0
+    
+    var onStartRecording: (() -> Void)?
+    var onStopRecording: (() -> Void)?
 
     private var startTime: Date?
     private var frames: [CGImage] = []
@@ -98,6 +101,8 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
                 try await stream.startCapture()
                 self.stream = stream
+                self.selectionIndicator?.updateRecordingState(isRecording: true)
+                onStartRecording?()
             } catch {
                 self.isRecording = false
                 self.stopDurationTimer()
@@ -116,8 +121,12 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 NSAlert(error: error).runModal()
             }
             stopDurationTimer()
-            hideSelectionIndicator()
             isRecording = false
+            print("[DEBUG] Recording stopped. Captured \(frames.count) frames")
+            // Hide indicator and clear selection after stopping
+            hideSelectionIndicator()
+            selectedRect = nil
+            onStopRecording?()
         }
     }
 
@@ -127,8 +136,15 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
             self.selectionIndicator?.close()
             // Create and show new indicator
             print("[DEBUG] Selection indicator rect: x=\(rect.origin.x) y=\(rect.origin.y) w=\(rect.width) h=\(rect.height)")
-            self.selectionIndicator = SelectionIndicatorWindow(rect: rect)
-            self.selectionIndicator?.show()
+            let indicator = SelectionIndicatorWindow(rect: rect)
+            indicator.onStart = { [weak self] in
+                self?.start()
+            }
+            indicator.onStop = { [weak self] in
+                self?.stop()
+            }
+            indicator.show()
+            self.selectionIndicator = indicator
         }
     }
 
@@ -292,7 +308,10 @@ private extension Recorder {
 final class SelectionIndicatorWindow {
     private var indicatorWindow: NSWindow?
     private var dimWindow: NSWindow?
+    private var controlWindow: NSWindow?
     private let rect: CGRect
+    var onStart: (() -> Void)?
+    var onStop: (() -> Void)?
     
     var windowNumbers: [CGWindowID] {
         var ids: [CGWindowID] = []
@@ -301,6 +320,9 @@ final class SelectionIndicatorWindow {
         }
         if let indWin = indicatorWindow, indWin.windowNumber > 0 {
             ids.append(CGWindowID(indWin.windowNumber))
+        }
+        if let ctrlWin = controlWindow, ctrlWin.windowNumber > 0 {
+            ids.append(CGWindowID(ctrlWin.windowNumber))
         }
         return ids
     }
@@ -350,6 +372,52 @@ final class SelectionIndicatorWindow {
         window.contentView = view
         window.orderFront(nil)
         self.indicatorWindow = window
+        
+        // Create control buttons window below the selection
+        createControlWindow()
+    }
+    
+    private func createControlWindow() {
+        let buttonWidth: CGFloat = 100
+        let buttonHeight: CGFloat = 32
+        let spacing: CGFloat = 12
+        let padding: CGFloat = 12
+        let totalWidth = buttonWidth * 2 + spacing + padding * 2
+        let totalHeight = buttonHeight + padding * 2
+        
+        // Position below the selection rect
+        var controlOrigin = CGPoint(x: rect.midX - totalWidth / 2, y: rect.minY - totalHeight - 8)
+        // If too close to bottom of screen, position above instead
+        if controlOrigin.y < 50 {
+            controlOrigin.y = rect.maxY + 8
+        }
+        
+        let controlRect = NSRect(x: controlOrigin.x, y: controlOrigin.y, width: totalWidth, height: totalHeight)
+        let ctrlWindow = NSWindow(
+            contentRect: controlRect,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        ctrlWindow.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) + 2)
+        ctrlWindow.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.95)
+        ctrlWindow.isOpaque = false
+        ctrlWindow.hasShadow = true
+        ctrlWindow.ignoresMouseEvents = false
+        ctrlWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        
+        let controlView = ControlButtonsView(frame: NSRect(origin: .zero, size: controlRect.size))
+        controlView.onStart = { [weak self] in self?.onStart?() }
+        controlView.onStop = { [weak self] in self?.onStop?() }
+        ctrlWindow.contentView = controlView
+        ctrlWindow.orderFront(nil)
+        self.controlWindow = ctrlWindow
+    }
+    
+    func updateRecordingState(isRecording: Bool) {
+        if let controlView = controlWindow?.contentView as? ControlButtonsView {
+            controlView.updateRecordingState(isRecording: isRecording)
+        }
     }
 
     func close() {
@@ -357,6 +425,63 @@ final class SelectionIndicatorWindow {
         dimWindow = nil
         indicatorWindow?.orderOut(nil)
         indicatorWindow = nil
+        controlWindow?.orderOut(nil)
+        controlWindow = nil
+    }
+}
+
+// MARK: - Control Buttons View
+final class ControlButtonsView: NSView {
+    var onStart: (() -> Void)?
+    var onStop: (() -> Void)?
+    
+    private lazy var startButton: NSButton = {
+        let button = NSButton(title: "Start", target: self, action: #selector(startTapped))
+        button.bezelStyle = .rounded
+        return button
+    }()
+    
+    private lazy var stopButton: NSButton = {
+        let button = NSButton(title: "Stop", target: self, action: #selector(stopTapped))
+        button.bezelStyle = .rounded
+        button.isEnabled = false
+        return button
+    }()
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.95).cgColor
+        
+        addSubview(startButton)
+        addSubview(stopButton)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func layout() {
+        super.layout()
+        let buttonWidth: CGFloat = 100
+        let buttonHeight: CGFloat = 32
+        let spacing: CGFloat = 12
+        let padding: CGFloat = 12
+        
+        startButton.frame = NSRect(x: padding, y: padding, width: buttonWidth, height: buttonHeight)
+        stopButton.frame = NSRect(x: padding + buttonWidth + spacing, y: padding, width: buttonWidth, height: buttonHeight)
+    }
+    
+    func updateRecordingState(isRecording: Bool) {
+        startButton.isEnabled = !isRecording
+        startButton.title = isRecording ? "Recording..." : "Start"
+        stopButton.isEnabled = isRecording
+    }
+    
+    @objc private func startTapped() {
+        onStart?()
+    }
+    
+    @objc private func stopTapped() {
+        onStop?()
     }
 }
 
@@ -451,6 +576,7 @@ final class StreamOutput: NSObject, SCStreamOutput {
 struct ContentView: View {
     @StateObject private var recorder = Recorder()
     @State private var lastSaveURL: URL?
+    @State private var appWindow: NSWindow?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -462,6 +588,8 @@ struct ContentView: View {
                 Button("Select Region") {
                     RegionSelector.present { rect in
                         recorder.selectedRect = rect
+                        // Hide main window immediately after selection
+                        appWindow?.orderOut(nil)
                     } onCancel: {
                         // cancelled
                     }
@@ -502,6 +630,25 @@ struct ContentView: View {
         }
         .padding(20)
         .frame(width: 520, height: 300)
+        .background(WindowAccessor(window: $appWindow))
+        .onChange(of: recorder.selectedRect) { oldValue, newValue in
+            // Show main window when selection is cleared
+            if newValue == nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    appWindow?.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+        }
+        .onAppear {
+            recorder.onStopRecording = { [weak appWindow] in
+                // Show main window when recording stops
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    appWindow?.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+        }
     }
 
     private func save() {
@@ -523,5 +670,23 @@ struct ContentView: View {
 
     private func pretty(_ r: CGRect) -> String {
         "x:\(Int(r.origin.x)) y:\(Int(r.origin.y)) w:\(Int(r.width)) h:\(Int(r.height))"
+    }
+}
+
+private struct WindowAccessor: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            self.window = view.window
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            self.window = nsView.window
+        }
     }
 }
