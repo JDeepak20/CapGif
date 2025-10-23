@@ -16,7 +16,15 @@ import CoreMedia
 
 // MARK: - Recorder (ScreenCaptureKit)
 final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
-    @Published var selectedRect: CGRect? = nil      // GLOBAL screen coords (points, origin bottom-left)
+    @Published var selectedRect: CGRect? = nil {     // GLOBAL screen coords (points, origin bottom-left)
+        didSet {
+            if let rect = selectedRect {
+                showSelectionIndicator(for: rect)
+            } else {
+                hideSelectionIndicator()
+            }
+        }
+    }
     @Published var isRecording = false
     @Published var fps: Double = 10
     @Published var durationSeconds: Double = 0
@@ -29,6 +37,8 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
     private let output = StreamOutput()
     private let queue = DispatchQueue(label: "capgif.capture")
     private let ciContext = CIContext(options: nil)
+    private var durationTimer: DispatchSourceTimer?
+    private var selectionIndicator: SelectionIndicatorWindow?
 
     override init() {
         super.init()
@@ -48,12 +58,13 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 durationSeconds = 0
                 startTime = Date()
                 isRecording = true
+                startDurationTimer()
 
                 // 1) Pick the display under the selection (fallback to first)
                 let content = try await SCShareableContent.current
                 let displayID = displayIDFor(pointRect: rectPoints)
                 let display = content.displays.first(where: { $0.displayID == displayID }) ?? content.displays.first!
-                guard let nsScreen = screenFor(displayID: display.displayID) else {
+                guard screenFor(displayID: display.displayID) != nil else {
                     throw NSError(domain: "CapGif", code: 99, userInfo: [NSLocalizedDescriptionKey: "Unable to find NSScreen for display"])
                 }
 
@@ -80,6 +91,7 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 self.stream = stream
             } catch {
                 self.isRecording = false
+                self.stopDurationTimer()
                 NSAlert(error: error).runModal()
             }
         }
@@ -94,7 +106,25 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
             } catch {
                 NSAlert(error: error).runModal()
             }
+            stopDurationTimer()
             isRecording = false
+        }
+    }
+
+    private func showSelectionIndicator(for rect: CGRect) {
+        DispatchQueue.main.async {
+            // Close existing indicator if any
+            self.selectionIndicator?.close()
+            // Create and show new indicator
+            self.selectionIndicator = SelectionIndicatorWindow(rect: rect)
+            self.selectionIndicator?.show()
+        }
+    }
+
+    private func hideSelectionIndicator() {
+        DispatchQueue.main.async {
+            self.selectionIndicator?.close()
+            self.selectionIndicator = nil
         }
     }
 
@@ -201,6 +231,109 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
         let pxW = local.size.width * scale
         let pxH = local.size.height * scale
         return CGRect(x: pxX, y: pxY, width: pxW, height: pxH).integral
+    }
+}
+
+// MARK: - Duration Timer
+private extension Recorder {
+    func startDurationTimer() {
+        durationTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            guard self.isRecording, let start = self.startTime else { return }
+            self.durationSeconds = Date().timeIntervalSince(start)
+        }
+        durationTimer = timer
+        timer.resume()
+    }
+
+    func stopDurationTimer() {
+        durationTimer?.cancel()
+        durationTimer = nil
+    }
+}
+
+// MARK: - Selection Indicator Window
+final class SelectionIndicatorWindow {
+    private var window: NSWindow?
+    private let rect: CGRect
+
+    init(rect: CGRect) {
+        self.rect = rect
+    }
+
+    func show() {
+        let window = NSWindow(
+            contentRect: rect,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.level = .floating
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+
+        let view = SelectionIndicatorView(frame: rect)
+        window.contentView = view
+        window.orderFront(nil)
+        self.window = window
+    }
+
+    func close() {
+        window?.orderOut(nil)
+        window = nil
+    }
+}
+
+final class SelectionIndicatorView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // Draw a red border with slight transparency
+        NSColor.systemRed.withAlphaComponent(0.8).setStroke()
+        let path = NSBezierPath(rect: bounds.insetBy(dx: 2, dy: 2))
+        path.lineWidth = 4
+        path.stroke()
+
+        // Optional: Add corner indicators for better visibility
+        let cornerSize: CGFloat = 20
+        NSColor.systemRed.withAlphaComponent(0.9).setStroke()
+        let cornerPath = NSBezierPath()
+        cornerPath.lineWidth = 3
+
+        // Top-left corner
+        cornerPath.move(to: NSPoint(x: 0, y: cornerSize))
+        cornerPath.line(to: NSPoint(x: 0, y: 0))
+        cornerPath.line(to: NSPoint(x: cornerSize, y: 0))
+
+        // Top-right corner
+        cornerPath.move(to: NSPoint(x: bounds.width - cornerSize, y: 0))
+        cornerPath.line(to: NSPoint(x: bounds.width, y: 0))
+        cornerPath.line(to: NSPoint(x: bounds.width, y: cornerSize))
+
+        // Bottom-right corner
+        cornerPath.move(to: NSPoint(x: bounds.width, y: bounds.height - cornerSize))
+        cornerPath.line(to: NSPoint(x: bounds.width, y: bounds.height))
+        cornerPath.line(to: NSPoint(x: bounds.width - cornerSize, y: bounds.height))
+
+        // Bottom-left corner
+        cornerPath.move(to: NSPoint(x: cornerSize, y: bounds.height))
+        cornerPath.line(to: NSPoint(x: 0, y: bounds.height))
+        cornerPath.line(to: NSPoint(x: 0, y: bounds.height - cornerSize))
+
+        cornerPath.stroke()
     }
 }
 
