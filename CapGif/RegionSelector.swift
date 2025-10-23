@@ -49,8 +49,10 @@ final class SelectionCaptureView: NSView {
     var onDone: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
 
-    private var start: CGPoint?
-    private var current: CGPoint?
+    private var startGlobal: CGPoint?
+    private var currentGlobal: CGPoint?
+    private var startLocal: CGPoint?
+    private var currentLocal: CGPoint?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -65,16 +67,21 @@ final class SelectionCaptureView: NSView {
     private var globalMouse: CGPoint { NSEvent.mouseLocation }
 
     override func mouseDown(with event: NSEvent) {
-        start = globalMouse
-        current = start
+        let global = globalMouse
+        startGlobal = global
+        currentGlobal = global
+        startLocal = convertToLocal(globalPoint: global)
+        currentLocal = startLocal
         needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
-        current = globalMouse
+        let global = globalMouse
+        currentGlobal = global
+        currentLocal = convertToLocal(globalPoint: global)
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
-        guard let a = start, let b = current else { onCancel?(); return }
+        guard let a = startGlobal, let b = currentGlobal else { onCancel?(); return }
         let r = NSRect(x: min(a.x, b.x),
                        y: min(a.y, b.y),
                        width: abs(a.x - b.x),
@@ -88,7 +95,7 @@ final class SelectionCaptureView: NSView {
         NSColor.black.withAlphaComponent(0.20).setFill()
         dirtyRect.fill()
 
-        if let a = start, let b = current {
+        if let a = startLocal, let b = currentLocal {
             let r = NSRect(x: min(a.x, b.x),
                            y: min(a.y, b.y),
                            width: abs(a.x - b.x),
@@ -105,6 +112,12 @@ final class SelectionCaptureView: NSView {
             path.lineWidth = 2
             path.stroke()
         }
+    }
+
+    private func convertToLocal(globalPoint: CGPoint) -> CGPoint? {
+        guard let window else { return nil }
+        let windowPoint = window.convertPoint(fromScreen: globalPoint)
+        return convert(windowPoint, from: nil)
     }
 
     // ESC to cancel
