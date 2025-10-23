@@ -113,6 +113,7 @@ final class SelectionCaptureView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override func mouseDown(with event: NSEvent) {
+        guard !isRecording else { return }
         guard let window else { return }
 
         let windowPoint = event.locationInWindow
@@ -128,6 +129,7 @@ final class SelectionCaptureView: NSView {
         needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
+        guard !isRecording else { return }
         guard let window else { return }
 
         let windowPoint = event.locationInWindow
@@ -136,6 +138,7 @@ final class SelectionCaptureView: NSView {
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        guard !isRecording else { return }
         guard let window else { return }
 
         let windowPoint = event.locationInWindow
@@ -183,9 +186,13 @@ final class SelectionCaptureView: NSView {
     private var escMonitor: Any?
     private func addEscapeMonitor() {
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+            guard let self = self else { return e }
             if e.keyCode == 53 {
-                self?.hideControlButtons()
-                self?.onCancel?()
+                if self.isRecording {
+                    return e
+                }
+                self.hideControlButtons()
+                self.onCancel?()
                 return nil
             }
             return e
