@@ -70,14 +70,15 @@ final class SelectionCaptureView: NSView {
         let global = globalMouse
         startGlobal = global
         currentGlobal = global
-        startLocal = convertToLocal(globalPoint: global)
-        currentLocal = startLocal
+        let local = convert(event.locationInWindow, from: nil)
+        startLocal = local
+        currentLocal = local
         needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
         let global = globalMouse
         currentGlobal = global
-        currentLocal = convertToLocal(globalPoint: global)
+        currentLocal = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
@@ -112,12 +113,6 @@ final class SelectionCaptureView: NSView {
             path.lineWidth = 2
             path.stroke()
         }
-    }
-
-    private func convertToLocal(globalPoint: CGPoint) -> CGPoint? {
-        guard let window else { return nil }
-        let windowPoint = window.convertPoint(fromScreen: globalPoint)
-        return convert(windowPoint, from: nil)
     }
 
     // ESC to cancel
