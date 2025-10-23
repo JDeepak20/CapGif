@@ -29,7 +29,7 @@ enum RegionSelector {
         window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false
 
-        let view = SelectionCaptureView(frame: union)
+        let view = SelectionCaptureView(frame: NSRect(origin: .zero, size: union.size))
         view.onDone = { rect in
             window.orderOut(nil)
             onDone(rect)
@@ -49,10 +49,16 @@ final class SelectionCaptureView: NSView {
     var onDone: ((CGRect) -> Void)?
     var onCancel: (() -> Void)?
 
-    private var startGlobal: CGPoint?
-    private var currentGlobal: CGPoint?
     private var startLocal: CGPoint?
     private var currentLocal: CGPoint?
+
+    private var selectionRectInView: NSRect? {
+        guard let a = startLocal, let b = currentLocal else { return nil }
+        return NSRect(x: min(a.x, b.x),
+                      y: min(a.y, b.y),
+                      width: abs(a.x - b.x),
+                      height: abs(a.y - b.y))
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -64,30 +70,33 @@ final class SelectionCaptureView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    private var globalMouse: CGPoint { NSEvent.mouseLocation }
-
     override func mouseDown(with event: NSEvent) {
-        let global = globalMouse
-        startGlobal = global
-        currentGlobal = global
         let local = convert(event.locationInWindow, from: nil)
         startLocal = local
         currentLocal = local
         needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
-        let global = globalMouse
-        currentGlobal = global
         currentLocal = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
-        guard let a = startGlobal, let b = currentGlobal else { onCancel?(); return }
-        let r = NSRect(x: min(a.x, b.x),
-                       y: min(a.y, b.y),
-                       width: abs(a.x - b.x),
-                       height: abs(a.y - b.y))
-        if r.width < 3 || r.height < 3 { onCancel?() } else { onDone?(r) }
+        currentLocal = convert(event.locationInWindow, from: nil)
+
+        guard let rectInView = selectionRectInView,
+              let window = self.window else {
+            onCancel?()
+            return
+        }
+
+        let rectInWindow = convert(rectInView, to: nil)
+        let rectOnScreen = window.convertToScreen(rectInWindow)
+
+        if rectOnScreen.width < 3 || rectOnScreen.height < 3 {
+            onCancel?()
+        } else {
+            onDone?(rectOnScreen)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -96,12 +105,7 @@ final class SelectionCaptureView: NSView {
         NSColor.black.withAlphaComponent(0.20).setFill()
         dirtyRect.fill()
 
-        if let a = startLocal, let b = currentLocal {
-            let r = NSRect(x: min(a.x, b.x),
-                           y: min(a.y, b.y),
-                           width: abs(a.x - b.x),
-                           height: abs(a.y - b.y))
-
+        if let r = selectionRectInView {
             // clear the selection area
             NSGraphicsContext.current?.saveGraphicsState()
             NSGraphicsContext.current?.compositingOperation = .destinationOut
