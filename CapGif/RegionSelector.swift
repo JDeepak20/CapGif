@@ -75,10 +75,13 @@ final class SelectionCaptureView: NSView {
     }
     override func mouseUp(with event: NSEvent) {
         guard let a = start, let b = current else { onCancel?(); return }
-        let r = NSRect(x: min(a.x, b.x),
-                       y: min(a.y, b.y),
-                       width: abs(a.x - b.x),
-                       height: abs(a.y - b.y))
+        // Round coordinates to whole pixels for precise alignment
+        let minX = round(min(a.x, b.x))
+        let minY = round(min(a.y, b.y))
+        let maxX = round(max(a.x, b.x))
+        let maxY = round(max(a.y, b.y))
+        let r = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        print("[DEBUG] RegionSelector final rect: x=\(r.origin.x) y=\(r.origin.y) w=\(r.width) h=\(r.height)")
         if r.width < 3 || r.height < 3 { onCancel?() } else { onDone?(r) }
     }
 

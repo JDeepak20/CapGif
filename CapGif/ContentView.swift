@@ -116,6 +116,7 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
             // Close existing indicator if any
             self.selectionIndicator?.close()
             // Create and show new indicator
+            print("[DEBUG] Selection indicator rect: x=\(rect.origin.x) y=\(rect.origin.y) w=\(rect.width) h=\(rect.height)")
             self.selectionIndicator = SelectionIndicatorWindow(rect: rect)
             self.selectionIndicator?.show()
         }
@@ -143,6 +144,13 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
         let cropRect = convertToDisplayPixelRect(rectPoints,
                                                  displayFramePoints: nsScreen.frame,
                                                  scale: scale)
+        
+        // Debug: Log crop rect on first frame only
+        if frames.isEmpty {
+            print("[DEBUG] Crop rect (pixels): x=\(cropRect.origin.x) y=\(cropRect.origin.y) w=\(cropRect.width) h=\(cropRect.height)")
+            print("[DEBUG] Full frame size: \(fullCG.width) x \(fullCG.height)")
+            print("[DEBUG] Display scale: \(scale)")
+        }
 
         // Crop the CGImage to the selected area
         if let cropped = fullCG.cropping(to: cropRect) {
@@ -225,12 +233,12 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
         )
         // 2) Flip Y within that display (points)
         let flippedYPoints = displayFramePoints.height - (local.origin.y + local.size.height)
-        // 3) Scale to pixels
-        let pxX = local.origin.x * scale
-        let pxY = flippedYPoints * scale
-        let pxW = local.size.width * scale
-        let pxH = local.size.height * scale
-        return CGRect(x: pxX, y: pxY, width: pxW, height: pxH).integral
+        // 3) Scale to pixels - round to avoid sub-pixel shifts
+        let pxX = round(local.origin.x * scale)
+        let pxY = round(flippedYPoints * scale)
+        let pxW = round(local.size.width * scale)
+        let pxH = round(local.size.height * scale)
+        return CGRect(x: pxX, y: pxY, width: pxW, height: pxH)
     }
 }
 
