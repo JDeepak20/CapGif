@@ -143,6 +143,10 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
             indicator.onStop = { [weak self] in
                 self?.stop()
             }
+            indicator.onCancel = { [weak self] in
+                // Cancel selection - clear rect and hide indicator
+                self?.selectedRect = nil
+            }
             indicator.show()
             self.selectionIndicator = indicator
         }
@@ -312,6 +316,8 @@ final class SelectionIndicatorWindow {
     private let rect: CGRect
     var onStart: (() -> Void)?
     var onStop: (() -> Void)?
+    var onCancel: (() -> Void)?
+    private var escMonitor: Any?
     
     var windowNumbers: [CGWindowID] {
         var ids: [CGWindowID] = []
@@ -412,6 +418,19 @@ final class SelectionIndicatorWindow {
         ctrlWindow.contentView = controlView
         ctrlWindow.orderFront(nil)
         self.controlWindow = ctrlWindow
+        
+        // Add ESC key monitor to cancel selection
+        addEscapeMonitor()
+    }
+    
+    private func addEscapeMonitor() {
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // ESC key
+                self?.onCancel?()
+                return nil
+            }
+            return event
+        }
     }
     
     func updateRecordingState(isRecording: Bool) {
@@ -421,6 +440,10 @@ final class SelectionIndicatorWindow {
     }
 
     func close() {
+        if let escMonitor {
+            NSEvent.removeMonitor(escMonitor)
+            self.escMonitor = nil
+        }
         dimWindow?.orderOut(nil)
         dimWindow = nil
         indicatorWindow?.orderOut(nil)
