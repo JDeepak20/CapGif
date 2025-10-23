@@ -67,6 +67,7 @@ final class SelectionCaptureView: NSView {
     override func mouseDown(with event: NSEvent) {
         start = globalMouse
         current = start
+        print("[DEBUG] mouseDown - start: x=\(start!.x) y=\(start!.y)")
         needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
@@ -75,6 +76,7 @@ final class SelectionCaptureView: NSView {
     }
     override func mouseUp(with event: NSEvent) {
         guard let a = start, let b = current else { onCancel?(); return }
+        print("[DEBUG] mouseUp - start: x=\(a.x) y=\(a.y), end: x=\(b.x) y=\(b.y)")
         // Round coordinates to whole pixels for precise alignment
         let minX = round(min(a.x, b.x))
         let minY = round(min(a.y, b.y))

@@ -76,13 +76,17 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                     scale: scale
                 )*/
 
-                // 3) Configure stream (capture full frames; we crop manually)
+                // 3) Configure stream to capture at display's native resolution
                 let filter = SCContentFilter(display: display, excludingWindows: [])
                 let config = SCStreamConfiguration()
                 config.pixelFormat = kCVPixelFormatType_32BGRA
                 config.minimumFrameInterval = CMTime(seconds: 1.0 / max(1, fps), preferredTimescale: 600)
-                // where to crop from
-                // NOTE: do NOT set config.width/height; we crop manually in appendFrame()
+                
+                // Set capture size to match display dimensions to avoid scaling/aspect ratio issues
+                // Use display.width/height which are in pixels
+                config.width = display.width
+                config.height = display.height
+                print("[DEBUG] Configuring capture: \(display.width) x \(display.height) pixels")
 
                 // 4) Start capture
                 let stream = SCStream(filter: filter, configuration: config, delegate: self)
@@ -137,19 +141,30 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let fullCG = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
-        // Build the crop rect in DISPLAY pixel space
+        // Get display info
         let displayID = displayIDFor(pointRect: rectPoints)
-        let scale = backingScaleFor(displayID: displayID)
         guard let nsScreen = screenFor(displayID: displayID) else { return }
+        
+        // Calculate ACTUAL scale from captured frame vs display size
+        // ScreenCaptureKit may not capture at full backing scale
+        let actualScaleX = CGFloat(fullCG.width) / nsScreen.frame.width
+        let actualScaleY = CGFloat(fullCG.height) / nsScreen.frame.height
+        
+        // Build the crop rect using the actual capture scale
         let cropRect = convertToDisplayPixelRect(rectPoints,
                                                  displayFramePoints: nsScreen.frame,
-                                                 scale: scale)
+                                                 scaleX: actualScaleX,
+                                                 scaleY: actualScaleY)
         
         // Debug: Log crop rect on first frame only
         if frames.isEmpty {
+            print("[DEBUG] === Crop Calculation ===")
+            print("[DEBUG] Selection (points): x=\(rectPoints.origin.x) y=\(rectPoints.origin.y) w=\(rectPoints.width) h=\(rectPoints.height)")
+            print("[DEBUG] Display frame (points): x=\(nsScreen.frame.origin.x) y=\(nsScreen.frame.origin.y) w=\(nsScreen.frame.width) h=\(nsScreen.frame.height)")
+            print("[DEBUG] Full frame size (pixels): \(fullCG.width) x \(fullCG.height)")
+            print("[DEBUG] Actual scale: X=\(actualScaleX) Y=\(actualScaleY)")
             print("[DEBUG] Crop rect (pixels): x=\(cropRect.origin.x) y=\(cropRect.origin.y) w=\(cropRect.width) h=\(cropRect.height)")
-            print("[DEBUG] Full frame size: \(fullCG.width) x \(fullCG.height)")
-            print("[DEBUG] Display scale: \(scale)")
+            print("[DEBUG] Crop rect as % of frame: x=\(cropRect.origin.x / CGFloat(fullCG.width) * 100)% w=\(cropRect.width / CGFloat(fullCG.width) * 100)%")
         }
 
         // Crop the CGImage to the selected area
@@ -223,7 +238,8 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
     /// Convert GLOBAL Cocoa rect (points, origin bottom-left) into the SELECTED DISPLAY'S pixel space (origin top-left)
     private func convertToDisplayPixelRect(_ globalRectPoints: CGRect,
                                            displayFramePoints: CGRect,
-                                           scale: CGFloat) -> CGRect {
+                                           scaleX: CGFloat,
+                                           scaleY: CGFloat) -> CGRect {
         // 1) Make rect relative to display origin (still in points)
         let local = CGRect(
             x: globalRectPoints.origin.x - displayFramePoints.origin.x,
@@ -231,13 +247,15 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
             width: globalRectPoints.size.width,
             height: globalRectPoints.size.height
         )
+        
         // 2) Flip Y within that display (points)
         let flippedYPoints = displayFramePoints.height - (local.origin.y + local.size.height)
-        // 3) Scale to pixels - round to avoid sub-pixel shifts
-        let pxX = round(local.origin.x * scale)
-        let pxY = round(flippedYPoints * scale)
-        let pxW = round(local.size.width * scale)
-        let pxH = round(local.size.height * scale)
+        
+        // 3) Scale to pixels using actual capture scale - round to avoid sub-pixel shifts
+        let pxX = round(local.origin.x * scaleX)
+        let pxY = round(flippedYPoints * scaleY)
+        let pxW = round(local.size.width * scaleX)
+        let pxH = round(local.size.height * scaleY)
         return CGRect(x: pxX, y: pxY, width: pxW, height: pxH)
     }
 }
@@ -286,7 +304,9 @@ final class SelectionIndicatorWindow {
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
 
-        let view = SelectionIndicatorView(frame: rect)
+        // View frame should be relative to window (origin at 0,0), not global coordinates
+        let viewFrame = NSRect(origin: .zero, size: rect.size)
+        let view = SelectionIndicatorView(frame: viewFrame)
         window.contentView = view
         window.orderFront(nil)
         self.window = window
