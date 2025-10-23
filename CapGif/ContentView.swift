@@ -76,8 +76,12 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                     scale: scale
                 )*/
 
-                // 3) Configure stream to capture at display's native resolution
-                let filter = SCContentFilter(display: display, excludingWindows: [])
+                // 3) Get windows to exclude (indicator overlay windows)
+                let excludeWindowIDs = selectionIndicator?.windowNumbers ?? []
+                let excludeWindows = content.windows.filter { excludeWindowIDs.contains($0.windowID) }
+                
+                // 4) Configure stream to capture at display's native resolution
+                let filter = SCContentFilter(display: display, excludingWindows: excludeWindows)
                 let config = SCStreamConfiguration()
                 config.pixelFormat = kCVPixelFormatType_32BGRA
                 config.minimumFrameInterval = CMTime(seconds: 1.0 / max(1, fps), preferredTimescale: 600)
@@ -87,8 +91,9 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 config.width = display.width
                 config.height = display.height
                 print("[DEBUG] Configuring capture: \(display.width) x \(display.height) pixels")
+                print("[DEBUG] Excluding \(excludeWindows.count) windows from capture")
 
-                // 4) Start capture
+                // 5) Start capture
                 let stream = SCStream(filter: filter, configuration: config, delegate: self)
                 try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
                 try await stream.startCapture()
@@ -283,38 +288,100 @@ private extension Recorder {
 
 // MARK: - Selection Indicator Window
 final class SelectionIndicatorWindow {
-    private var window: NSWindow?
+    private var indicatorWindow: NSWindow?
+    private var dimWindow: NSWindow?
     private let rect: CGRect
+    
+    var windowNumbers: [CGWindowID] {
+        var ids: [CGWindowID] = []
+        if let dimWin = dimWindow, dimWin.windowNumber > 0 {
+            ids.append(CGWindowID(dimWin.windowNumber))
+        }
+        if let indWin = indicatorWindow, indWin.windowNumber > 0 {
+            ids.append(CGWindowID(indWin.windowNumber))
+        }
+        return ids
+    }
 
     init(rect: CGRect) {
         self.rect = rect
     }
 
     func show() {
+        // Create full-screen dimming overlay
+        let allScreens = NSScreen.screens.reduce(NSRect.zero) { $0.union($1.frame) }
+        let dimWindow = NSWindow(
+            contentRect: allScreens,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        dimWindow.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        dimWindow.backgroundColor = .clear
+        dimWindow.isOpaque = false
+        dimWindow.hasShadow = false
+        dimWindow.ignoresMouseEvents = true
+        dimWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        
+        let dimView = DimmingView(frame: allScreens, cutoutRect: rect)
+        dimWindow.contentView = dimView
+        dimWindow.orderFront(nil)
+        self.dimWindow = dimWindow
+        
+        // Create indicator border window on top of dimming
         let window = NSWindow(
             contentRect: rect,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        window.level = .floating
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) + 1)
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
 
         // View frame should be relative to window (origin at 0,0), not global coordinates
         let viewFrame = NSRect(origin: .zero, size: rect.size)
         let view = SelectionIndicatorView(frame: viewFrame)
         window.contentView = view
         window.orderFront(nil)
-        self.window = window
+        self.indicatorWindow = window
     }
 
     func close() {
-        window?.orderOut(nil)
-        window = nil
+        dimWindow?.orderOut(nil)
+        dimWindow = nil
+        indicatorWindow?.orderOut(nil)
+        indicatorWindow = nil
+    }
+}
+
+final class DimmingView: NSView {
+    private let cutoutRect: CGRect
+    
+    init(frame frameRect: NSRect, cutoutRect: CGRect) {
+        self.cutoutRect = cutoutRect
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        // Fill entire screen with 50% black
+        NSColor.black.withAlphaComponent(0.5).setFill()
+        bounds.fill()
+        
+        // Cut out the selected region (make it transparent)
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .destinationOut
+        NSColor.black.setFill()
+        cutoutRect.fill()
+        NSGraphicsContext.current?.restoreGraphicsState()
     }
 }
 
