@@ -17,6 +17,7 @@ class PreviewWindow {
     var onSave: (() -> Void)?
     var onDiscard: (() -> Void)?
     var onRecapture: (() -> Void)?
+    var onTrim: (() -> Void)?
     
     init(frames: [CGImage], fps: Double) {
         self.frames = frames
@@ -38,6 +39,10 @@ class PreviewWindow {
             onRecapture: { [weak self] in
                 self?.close()
                 self?.onRecapture?()
+            },
+            onTrim: { [weak self] in
+                self?.close()
+                self?.onTrim?()
             }
         )
         
@@ -72,6 +77,7 @@ struct PreviewContentView: View {
     let onSave: () -> Void
     let onDiscard: () -> Void
     let onRecapture: () -> Void
+    let onTrim: () -> Void
     
     @State private var currentFrameIndex = 0
     @State private var timer: Timer?
@@ -127,6 +133,11 @@ struct PreviewContentView: View {
                     onRecapture()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+                
+                Button("Trim") {
+                    onTrim()
+                }
+                .keyboardShortcut("t", modifiers: [.command])
                 
                 Button("Save GIF") {
                     onSave()

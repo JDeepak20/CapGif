@@ -218,6 +218,11 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
         durationSeconds = 0
     }
     
+    func updateFrames(_ newFrames: [CGImage]) {
+        frames = newFrames
+        durationSeconds = Double(newFrames.count) / fps
+    }
+    
     func saveGIF(at url: URL) throws {
         guard !frames.isEmpty else {
             throw NSError(domain: "CapGif", code: 1, userInfo: [NSLocalizedDescriptionKey: "No frames captured"])
@@ -617,6 +622,7 @@ struct ContentView: View {
     @State private var lastSaveURL: URL?
     @State private var appWindow: NSWindow?
     @State private var previewWindow: PreviewWindow?
+    @State private var trimWindow: TrimWindow?
     @State private var isShowingPreview = false
 
     var body: some View {
@@ -731,6 +737,10 @@ struct ContentView: View {
             }
         }
         
+        preview.onTrim = {
+            showTrimWindow(frames: frames, fps: fps)
+        }
+        
         previewWindow = preview
         preview.show()
     }
@@ -753,6 +763,25 @@ struct ContentView: View {
                 }
             }
         }
+    }
+    
+    private func showTrimWindow(frames: [CGImage], fps: Double) {
+        let trim = TrimWindow(frames: frames, fps: fps)
+        
+        trim.onSave = { trimmedFrames in
+            // Update recorder with trimmed frames
+            recorder.updateFrames(trimmedFrames)
+            // Show preview again with trimmed frames
+            showPreview(frames: trimmedFrames, fps: fps)
+        }
+        
+        trim.onCancel = {
+            // Go back to preview with original frames
+            showPreview(frames: frames, fps: fps)
+        }
+        
+        trimWindow = trim
+        trim.show()
     }
     
     private func showMainWindow() {
