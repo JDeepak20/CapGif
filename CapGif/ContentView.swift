@@ -31,6 +31,7 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
     
     var onStartRecording: (() -> Void)?
     var onStopRecording: (() -> Void)?
+    var onShowPreview: (([CGImage], Double) -> Void)?
 
     private var startTime: Date?
     private var frames: [CGImage] = []
@@ -126,7 +127,13 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
             // Hide indicator and clear selection after stopping
             hideSelectionIndicator()
             selectedRect = nil
-            onStopRecording?()
+            
+            // Show preview window with captured frames
+            if !frames.isEmpty {
+                onShowPreview?(frames, fps)
+            } else {
+                onStopRecording?()
+            }
         }
     }
 
@@ -202,6 +209,15 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
         }
     }
 
+    func getFrames() -> [CGImage] {
+        return frames
+    }
+    
+    func clearFrames() {
+        frames.removeAll()
+        durationSeconds = 0
+    }
+    
     func saveGIF(at url: URL) throws {
         guard !frames.isEmpty else {
             throw NSError(domain: "CapGif", code: 1, userInfo: [NSLocalizedDescriptionKey: "No frames captured"])
@@ -600,6 +616,7 @@ struct ContentView: View {
     @StateObject private var recorder = Recorder()
     @State private var lastSaveURL: URL?
     @State private var appWindow: NSWindow?
+    @State private var previewWindow: PreviewWindow?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -664,8 +681,13 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            // Setup preview window callback
+            recorder.onShowPreview = { frames, fps in
+                showPreview(frames: frames, fps: fps)
+            }
+            
             recorder.onStopRecording = { [weak appWindow] in
-                // Show main window when recording stops
+                // Show main window when recording stops (only if no preview)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     appWindow?.makeKeyAndOrderFront(nil)
                     NSApp.activate(ignoringOtherApps: true)
@@ -674,6 +696,62 @@ struct ContentView: View {
         }
     }
 
+    private func showPreview(frames: [CGImage], fps: Double) {
+        let preview = PreviewWindow(frames: frames, fps: fps)
+        
+        preview.onSave = {
+            saveFromPreview()
+        }
+        
+        preview.onDiscard = {
+            recorder.clearFrames()
+            showMainWindow()
+        }
+        
+        preview.onRecapture = {
+            recorder.clearFrames()
+            showMainWindow()
+            // Trigger region selection again
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                RegionSelector.present { rect in
+                    recorder.selectedRect = rect
+                    appWindow?.orderOut(nil)
+                } onCancel: {
+                    // cancelled
+                }
+            }
+        }
+        
+        previewWindow = preview
+        preview.show()
+    }
+    
+    private func saveFromPreview() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.gif]
+        panel.nameFieldStringValue = "capture.gif"
+        panel.begin { resp in
+            if resp == .OK, let url = panel.url {
+                do {
+                    try recorder.saveGIF(at: url)
+                    lastSaveURL = url
+                    NSSound(named: NSSound.Name("Glass"))?.play()
+                    recorder.clearFrames()
+                    showMainWindow()
+                } catch {
+                    NSAlert(error: error).runModal()
+                }
+            }
+        }
+    }
+    
+    private func showMainWindow() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            appWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+    
     private func save() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.gif]
