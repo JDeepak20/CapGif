@@ -607,22 +607,37 @@ final class SelectionIndicatorView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        // Draw a red border with slight transparency
-        NSColor.systemRed.withAlphaComponent(0.8).setStroke()
-        let path = NSBezierPath(rect: bounds.insetBy(dx: 2, dy: 2))
-        path.lineWidth = 4
+        let cornerRadius: CGFloat = 8
+        let borderWidth: CGFloat = 4
+        let insetRect = bounds.insetBy(dx: 2, dy: 2)
+        
+        // Draw blue border with glow effect
+        NSGraphicsContext.current?.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.systemBlue.withAlphaComponent(0.6)
+        shadow.shadowBlurRadius = 16
+        shadow.shadowOffset = .zero
+        shadow.set()
+        
+        NSColor.systemBlue.withAlphaComponent(0.9).setStroke()
+        let path = NSBezierPath(roundedRect: insetRect, xRadius: cornerRadius, yRadius: cornerRadius)
+        path.lineWidth = borderWidth
         path.stroke()
+        
+        NSGraphicsContext.current?.restoreGraphicsState()
 
-        // Optional: Add corner indicators for better visibility
+        // Add modern corner handles for better visibility
         let cornerSize: CGFloat = 20
-        NSColor.systemRed.withAlphaComponent(0.9).setStroke()
+        let cornerThickness: CGFloat = 3
+        NSColor.systemBlue.setStroke()
         let cornerPath = NSBezierPath()
-        cornerPath.lineWidth = 3
+        cornerPath.lineWidth = cornerThickness
+        cornerPath.lineCapStyle = .round
 
         // Top-left corner
-        cornerPath.move(to: NSPoint(x: 0, y: cornerSize))
+        cornerPath.move(to: NSPoint(x: cornerSize, y: 0))
         cornerPath.line(to: NSPoint(x: 0, y: 0))
-        cornerPath.line(to: NSPoint(x: cornerSize, y: 0))
+        cornerPath.line(to: NSPoint(x: 0, y: cornerSize))
 
         // Top-right corner
         cornerPath.move(to: NSPoint(x: bounds.width - cornerSize, y: 0))

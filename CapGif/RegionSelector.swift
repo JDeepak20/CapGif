@@ -105,11 +105,89 @@ final class SelectionCaptureView: NSView {
             NSBezierPath(rect: r).fill()
             NSGraphicsContext.current?.restoreGraphicsState()
 
-            NSColor.systemRed.setStroke()
-            let path = NSBezierPath(rect: r)
-            path.lineWidth = 2
+            // Modern blue border with rounded corners and glow
+            let cornerRadius: CGFloat = 8
+            let borderWidth: CGFloat = 3
+            
+            // Outer glow effect
+            NSGraphicsContext.current?.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.systemBlue.withAlphaComponent(0.5)
+            shadow.shadowBlurRadius = 12
+            shadow.shadowOffset = .zero
+            shadow.set()
+            
+            NSColor.systemBlue.withAlphaComponent(0.8).setStroke()
+            let path = NSBezierPath(roundedRect: r, xRadius: cornerRadius, yRadius: cornerRadius)
+            path.lineWidth = borderWidth
             path.stroke()
+            
+            NSGraphicsContext.current?.restoreGraphicsState()
+            
+            // Corner handles for better visibility
+            let handleSize: CGFloat = 20
+            let handleThickness: CGFloat = 3
+            NSColor.systemBlue.setStroke()
+            
+            drawCornerHandle(at: CGPoint(x: r.minX, y: r.maxY), size: handleSize, thickness: handleThickness, corner: .topLeft)
+            drawCornerHandle(at: CGPoint(x: r.maxX, y: r.maxY), size: handleSize, thickness: handleThickness, corner: .topRight)
+            drawCornerHandle(at: CGPoint(x: r.minX, y: r.minY), size: handleSize, thickness: handleThickness, corner: .bottomLeft)
+            drawCornerHandle(at: CGPoint(x: r.maxX, y: r.minY), size: handleSize, thickness: handleThickness, corner: .bottomRight)
+            
+            // Show dimensions if selection is large enough
+            if r.width > 50 && r.height > 50 {
+                let dimensionText = "\(Int(r.width)) × \(Int(r.height))"
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+                    .foregroundColor: NSColor.white
+                ]
+                let textSize = dimensionText.size(withAttributes: attributes)
+                let textRect = CGRect(
+                    x: r.midX - textSize.width / 2,
+                    y: r.midY - textSize.height / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+                
+                // Draw background for text
+                let bgRect = textRect.insetBy(dx: -8, dy: -4)
+                NSColor.systemBlue.withAlphaComponent(0.9).setFill()
+                NSBezierPath(roundedRect: bgRect, xRadius: 6, yRadius: 6).fill()
+                
+                dimensionText.draw(at: textRect.origin, withAttributes: attributes)
+            }
         }
+    }
+    
+    private enum Corner {
+        case topLeft, topRight, bottomLeft, bottomRight
+    }
+    
+    private func drawCornerHandle(at point: CGPoint, size: CGFloat, thickness: CGFloat, corner: Corner) {
+        let path = NSBezierPath()
+        path.lineWidth = thickness
+        path.lineCapStyle = .round
+        
+        switch corner {
+        case .topLeft:
+            path.move(to: CGPoint(x: point.x + size, y: point.y))
+            path.line(to: point)
+            path.line(to: CGPoint(x: point.x, y: point.y - size))
+        case .topRight:
+            path.move(to: CGPoint(x: point.x - size, y: point.y))
+            path.line(to: point)
+            path.line(to: CGPoint(x: point.x, y: point.y - size))
+        case .bottomLeft:
+            path.move(to: CGPoint(x: point.x + size, y: point.y))
+            path.line(to: point)
+            path.line(to: CGPoint(x: point.x, y: point.y + size))
+        case .bottomRight:
+            path.move(to: CGPoint(x: point.x - size, y: point.y))
+            path.line(to: point)
+            path.line(to: CGPoint(x: point.x, y: point.y + size))
+        }
+        
+        path.stroke()
     }
 
     // ESC to cancel - override keyDown for direct handling
