@@ -745,20 +745,11 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
 
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("FPS: \(Int(recorder.fps))")
-                    Slider(value: $recorder.fps, in: 3...30, step: 1)
-                        .frame(width: 220)
-                }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text("Duration: \(String(format: "%.1fs", recorder.durationSeconds))")
-                    if let url = lastSaveURL {
-                        Text("Saved to: \(url.lastPathComponent)")
-                            .foregroundStyle(.secondary).font(.caption)
-                    }
-                }
+            VStack {
+                Text("FPS: \(Int(recorder.fps))")
+                    .font(.callout)
+                Slider(value: $recorder.fps, in: 3...30, step: 1)
+                    .frame(width: 240)
             }
 
             Spacer()
