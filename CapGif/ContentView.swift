@@ -617,6 +617,7 @@ struct ContentView: View {
     @State private var lastSaveURL: URL?
     @State private var appWindow: NSWindow?
     @State private var previewWindow: PreviewWindow?
+    @State private var isShowingPreview = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -672,8 +673,8 @@ struct ContentView: View {
         .frame(width: 520, height: 300)
         .background(WindowAccessor(window: $appWindow))
         .onChange(of: recorder.selectedRect) { oldValue, newValue in
-            // Show main window when selection is cleared
-            if newValue == nil {
+            // Show main window when selection is cleared (but not if preview is showing)
+            if newValue == nil && !isShowingPreview {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     appWindow?.makeKeyAndOrderFront(nil)
                     NSApp.activate(ignoringOtherApps: true)
@@ -697,6 +698,12 @@ struct ContentView: View {
     }
 
     private func showPreview(frames: [CGImage], fps: Double) {
+        // Set flag to prevent main window from appearing
+        isShowingPreview = true
+        
+        // Hide main window before showing preview
+        appWindow?.orderOut(nil)
+        
         let preview = PreviewWindow(frames: frames, fps: fps)
         
         preview.onSave = {
@@ -705,11 +712,13 @@ struct ContentView: View {
         
         preview.onDiscard = {
             recorder.clearFrames()
+            isShowingPreview = false
             showMainWindow()
         }
         
         preview.onRecapture = {
             recorder.clearFrames()
+            isShowingPreview = false
             showMainWindow()
             // Trigger region selection again
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -737,6 +746,7 @@ struct ContentView: View {
                     lastSaveURL = url
                     NSSound(named: NSSound.Name("Glass"))?.play()
                     recorder.clearFrames()
+                    isShowingPreview = false
                     showMainWindow()
                 } catch {
                     NSAlert(error: error).runModal()
