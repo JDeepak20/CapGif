@@ -624,6 +624,7 @@ struct ContentView: View {
     @State private var previewWindow: PreviewWindow?
     @State private var trimWindow: TrimWindow?
     @State private var isShowingPreview = false
+    @State private var hasScreenRecordingPermission = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -631,29 +632,23 @@ struct ContentView: View {
             Text(recorder.selectedRect != nil ? "Selected: \(pretty(recorder.selectedRect!))" : "No region selected")
                 .font(.callout).foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
-                Button("Select Region") {
-                    RegionSelector.present { rect in
-                        recorder.selectedRect = rect
-                        // Hide main window immediately after selection
-                        appWindow?.orderOut(nil)
-                    } onCancel: {
-                        // cancelled
-                    }
+            Button(action: {
+                RegionSelector.present { rect in
+                    recorder.selectedRect = rect
+                    // Hide main window immediately after selection
+                    appWindow?.orderOut(nil)
+                } onCancel: {
+                    // cancelled
                 }
-                .keyboardShortcut("s", modifiers: [.command])
-
-                Button(recorder.isRecording ? "Recording…" : "Start") {
-                    recorder.start()
-                }
-                .disabled(recorder.selectedRect == nil || recorder.isRecording)
-
-                Button("Stop") { recorder.stop() }
-                    .disabled(!recorder.isRecording)
-
-                Button("Save GIF") { save() }
-                    .disabled(recorder.isRecording)
+            }) {
+                Label("Select Region", systemImage: "viewfinder.circle.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
             }
+            .keyboardShortcut("s", modifiers: [.command])
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
 
             HStack {
                 VStack(alignment: .leading) {
@@ -672,8 +667,23 @@ struct ContentView: View {
             }
 
             Spacer()
-            Text("Tip: Select a region → Start → Stop → Save. Grant Screen Recording in System Settings.")
-                .font(.footnote).foregroundStyle(.secondary)
+            VStack(spacing: 4) {
+                Text("How to use:")
+                    .font(.caption).fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                Text("1. Click 'Select Region' and drag to choose area")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("2. Use Start/Stop buttons on the overlay to record")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("3. Preview, trim, and save your GIF")
+                    .font(.caption).foregroundStyle(.secondary)
+                
+                if !hasScreenRecordingPermission {
+                    Text("⚠️ Grant Screen Recording permission in System Settings if prompted")
+                        .font(.caption2).foregroundStyle(.orange)
+                        .padding(.top, 4)
+                }
+            }
         }
         .padding(20)
         .frame(width: 520, height: 300)
@@ -688,6 +698,9 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            // Check screen recording permission
+            checkScreenRecordingPermission()
+            
             // Setup preview window callback
             recorder.onShowPreview = { frames, fps in
                 showPreview(frames: frames, fps: fps)
@@ -782,6 +795,23 @@ struct ContentView: View {
         
         trimWindow = trim
         trim.show()
+    }
+    
+    private func checkScreenRecordingPermission() {
+        Task {
+            do {
+                // Try to get shareable content - this will succeed if permission is granted
+                _ = try await SCShareableContent.current
+                await MainActor.run {
+                    hasScreenRecordingPermission = true
+                }
+            } catch {
+                // Permission not granted or error occurred
+                await MainActor.run {
+                    hasScreenRecordingPermission = false
+                }
+            }
+        }
     }
     
     private func showMainWindow() {
