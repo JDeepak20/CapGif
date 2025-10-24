@@ -154,6 +154,17 @@ final class Recorder: NSObject, ObservableObject, SCStreamDelegate {
                 // Cancel selection - clear rect and hide indicator
                 self?.selectedRect = nil
             }
+            indicator.onRedraw = { [weak self] in
+                // Close current indicator and trigger region selection again
+                self?.selectionIndicator?.close()
+                self?.selectionIndicator = nil
+                RegionSelector.present { rect in
+                    self?.selectedRect = rect
+                } onCancel: {
+                    // If cancelled, restore previous selection or clear
+                    // (previous selection already stored in self.selectedRect)
+                }
+            }
             indicator.show()
             self.selectionIndicator = indicator
         }
@@ -338,6 +349,7 @@ final class SelectionIndicatorWindow {
     var onStart: (() -> Void)?
     var onStop: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onRedraw: (() -> Void)?
     private var escMonitor: Any?
     
     var windowNumbers: [CGWindowID] {
@@ -409,7 +421,7 @@ final class SelectionIndicatorWindow {
         let buttonHeight: CGFloat = 38
         let spacing: CGFloat = 16.5
         let padding: CGFloat = 18.5
-        let totalWidth = buttonWidth * 3 + spacing * 2 + padding * 2
+        let totalWidth = buttonWidth * 4 + spacing * 3 + padding * 2
         let totalHeight = buttonHeight + padding * 2
         
         // Position below the selection rect
@@ -437,6 +449,7 @@ final class SelectionIndicatorWindow {
         controlView.onStart = { [weak self] in self?.onStart?() }
         controlView.onStop = { [weak self] in self?.onStop?() }
         controlView.onCancel = { [weak self] in self?.onCancel?() }
+        controlView.onRedraw = { [weak self] in self?.onRedraw?() }
         ctrlWindow.contentView = controlView
         ctrlWindow.orderFront(nil)
         self.controlWindow = ctrlWindow
@@ -480,6 +493,7 @@ final class ControlButtonsView: NSView {
     var onStart: (() -> Void)?
     var onStop: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onRedraw: (() -> Void)?
     
     private lazy var startButton: NSButton = {
         let button = NSButton(title: "Start", target: self, action: #selector(startTapped))
@@ -500,6 +514,12 @@ final class ControlButtonsView: NSView {
         return button
     }()
     
+    private lazy var redrawButton: NSButton = {
+        let button = NSButton(title: "Redraw", target: self, action: #selector(redrawTapped))
+        button.bezelStyle = .rounded
+        return button
+    }()
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -509,6 +529,7 @@ final class ControlButtonsView: NSView {
         addSubview(startButton)
         addSubview(stopButton)
         addSubview(cancelButton)
+        addSubview(redrawButton)
     }
     required init?(coder: NSCoder) { fatalError() }
     
@@ -522,6 +543,7 @@ final class ControlButtonsView: NSView {
         startButton.frame = NSRect(x: padding, y: padding, width: buttonWidth, height: buttonHeight)
         stopButton.frame = NSRect(x: padding + buttonWidth + spacing, y: padding, width: buttonWidth, height: buttonHeight)
         cancelButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 2, y: padding, width: buttonWidth, height: buttonHeight)
+        redrawButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 3, y: padding, width: buttonWidth, height: buttonHeight)
     }
     
     func updateRecordingState(isRecording: Bool) {
@@ -540,6 +562,10 @@ final class ControlButtonsView: NSView {
     
     @objc private func cancelTapped() {
         onCancel?()
+    }
+    
+    @objc private func redrawTapped() {
+        onRedraw?()
     }
 }
 
