@@ -405,11 +405,11 @@ final class SelectionIndicatorWindow {
     }
     
     private func createControlWindow() {
-        let buttonWidth: CGFloat = 100
-        let buttonHeight: CGFloat = 32
-        let spacing: CGFloat = 12
-        let padding: CGFloat = 12
-        let totalWidth = buttonWidth * 2 + spacing + padding * 2
+        let buttonWidth: CGFloat = 120
+        let buttonHeight: CGFloat = 38
+        let spacing: CGFloat = 16.5
+        let padding: CGFloat = 18.5
+        let totalWidth = buttonWidth * 3 + spacing * 2 + padding * 2
         let totalHeight = buttonHeight + padding * 2
         
         // Position below the selection rect
@@ -436,6 +436,7 @@ final class SelectionIndicatorWindow {
         let controlView = ControlButtonsView(frame: NSRect(origin: .zero, size: controlRect.size))
         controlView.onStart = { [weak self] in self?.onStart?() }
         controlView.onStop = { [weak self] in self?.onStop?() }
+        controlView.onCancel = { [weak self] in self?.onCancel?() }
         ctrlWindow.contentView = controlView
         ctrlWindow.orderFront(nil)
         self.controlWindow = ctrlWindow
@@ -478,6 +479,7 @@ final class SelectionIndicatorWindow {
 final class ControlButtonsView: NSView {
     var onStart: (() -> Void)?
     var onStop: (() -> Void)?
+    var onCancel: (() -> Void)?
     
     private lazy var startButton: NSButton = {
         let button = NSButton(title: "Start", target: self, action: #selector(startTapped))
@@ -492,6 +494,12 @@ final class ControlButtonsView: NSView {
         return button
     }()
     
+    private lazy var cancelButton: NSButton = {
+        let button = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
+        button.bezelStyle = .rounded
+        return button
+    }()
+    
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -500,18 +508,20 @@ final class ControlButtonsView: NSView {
         
         addSubview(startButton)
         addSubview(stopButton)
+        addSubview(cancelButton)
     }
     required init?(coder: NSCoder) { fatalError() }
     
     override func layout() {
         super.layout()
-        let buttonWidth: CGFloat = 100
-        let buttonHeight: CGFloat = 32
-        let spacing: CGFloat = 12
-        let padding: CGFloat = 12
+        let buttonWidth: CGFloat = 120
+        let buttonHeight: CGFloat = 38
+        let spacing: CGFloat = 16.5
+        let padding: CGFloat = 18.5
         
         startButton.frame = NSRect(x: padding, y: padding, width: buttonWidth, height: buttonHeight)
         stopButton.frame = NSRect(x: padding + buttonWidth + spacing, y: padding, width: buttonWidth, height: buttonHeight)
+        cancelButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 2, y: padding, width: buttonWidth, height: buttonHeight)
     }
     
     func updateRecordingState(isRecording: Bool) {
@@ -526,6 +536,10 @@ final class ControlButtonsView: NSView {
     
     @objc private func stopTapped() {
         onStop?()
+    }
+    
+    @objc private func cancelTapped() {
+        onCancel?()
     }
 }
 
