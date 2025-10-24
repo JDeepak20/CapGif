@@ -41,6 +41,7 @@ enum RegionSelector {
 
         window.contentView = view
         window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
         NSApp.activate(ignoringOtherApps: true)
     }
 }
@@ -58,7 +59,6 @@ final class SelectionCaptureView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.20).cgColor
-        addEscapeMonitor()
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -112,13 +112,13 @@ final class SelectionCaptureView: NSView {
         }
     }
 
-    // ESC to cancel
-    private var escMonitor: Any?
-    private func addEscapeMonitor() {
-        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
-            if e.keyCode == 53 { self?.onCancel?(); return nil }
-            return e
+    // ESC to cancel - override keyDown for direct handling
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // ESC key
+            print("[DEBUG] ESC key pressed in RegionSelector")
+            onCancel?()
+        } else {
+            super.keyDown(with: event)
         }
     }
-    deinit { if let escMonitor { NSEvent.removeMonitor(escMonitor) } }
 }
