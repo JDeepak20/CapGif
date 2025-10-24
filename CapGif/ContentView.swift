@@ -422,14 +422,15 @@ final class SelectionIndicatorWindow {
     }
     
     private func createControlWindow() {
-        let buttonWidth: CGFloat = 120
-        let buttonHeight: CGFloat = 38
-        let spacing: CGFloat = 16.5
-        let padding: CGFloat = 18.5
+        let buttonSize: CGFloat = 70
+        let spacing: CGFloat = 30
+        let padding: CGFloat = 24
+        let labelHeight: CGFloat = 16
+        let labelTopMargin: CGFloat = 8
         let counterHeight: CGFloat = 20
-        let counterTopMargin: CGFloat = 8
-        let totalWidth = buttonWidth * 4 + spacing * 3 + padding * 2
-        let totalHeight = buttonHeight + counterHeight + counterTopMargin + padding * 2
+        let counterTopMargin: CGFloat = 12
+        let totalWidth = buttonSize * 4 + spacing * 3 + padding * 2
+        let totalHeight = buttonSize + labelHeight + labelTopMargin + counterHeight + counterTopMargin + padding * 2
         
         // Position below the selection rect
         var controlOrigin = CGPoint(x: rect.midX - totalWidth / 2, y: rect.minY - totalHeight - 8)
@@ -446,9 +447,9 @@ final class SelectionIndicatorWindow {
             defer: false
         )
         ctrlWindow.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) + 2)
-        ctrlWindow.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.95)
+        ctrlWindow.backgroundColor = .clear
         ctrlWindow.isOpaque = false
-        ctrlWindow.hasShadow = true
+        ctrlWindow.hasShadow = false
         ctrlWindow.ignoresMouseEvents = false
         ctrlWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         
@@ -510,80 +511,182 @@ final class ControlButtonsView: NSView {
     
     private lazy var counterLabel: NSTextField = {
         let label = NSTextField(labelWithString: "0s | 0 frames")
-        label.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        label.textColor = .secondaryLabelColor
+        label.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.8)
         label.alignment = .center
         return label
     }()
     
     private lazy var startButton: NSButton = {
-        let button = NSButton(title: "Start", target: self, action: #selector(startTapped))
-        button.bezelStyle = .rounded
+        let button = NSButton(title: "", target: self, action: #selector(startTapped))
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.masksToBounds = false
+        button.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Start")
+        button.imagePosition = .imageOnly
         return button
+    }()
+    
+    private lazy var startLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "START")
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.8)
+        label.alignment = .center
+        return label
     }()
     
     private lazy var stopButton: NSButton = {
-        let button = NSButton(title: "Stop", target: self, action: #selector(stopTapped))
-        button.bezelStyle = .rounded
+        let button = NSButton(title: "", target: self, action: #selector(stopTapped))
+        button.isBordered = false
         button.isEnabled = false
+        button.wantsLayer = true
+        button.layer?.masksToBounds = false
+        button.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "Stop")
+        button.imagePosition = .imageOnly
         return button
+    }()
+    
+    private lazy var stopLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "STOP")
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.8)
+        label.alignment = .center
+        return label
     }()
     
     private lazy var cancelButton: NSButton = {
-        let button = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
-        button.bezelStyle = .rounded
+        let button = NSButton(title: "", target: self, action: #selector(cancelTapped))
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.masksToBounds = false
+        button.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Cancel")
+        button.imagePosition = .imageOnly
         return button
     }()
     
+    private lazy var cancelLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "CANCEL")
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.8)
+        label.alignment = .center
+        return label
+    }()
+    
     private lazy var redrawButton: NSButton = {
-        let button = NSButton(title: "Redraw", target: self, action: #selector(redrawTapped))
-        button.bezelStyle = .rounded
+        let button = NSButton(title: "", target: self, action: #selector(redrawTapped))
+        button.isBordered = false
+        button.wantsLayer = true
+        button.layer?.masksToBounds = false
+        button.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Redraw")
+        button.imagePosition = .imageOnly
         return button
+    }()
+    
+    private lazy var redrawLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "REDRAW")
+        label.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.8)
+        label.alignment = .center
+        return label
     }()
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.95).cgColor
+        // Pill shape - will be set properly in layout based on actual height
+        layer?.backgroundColor = NSColor(white: 0.2, alpha: 1.0).cgColor // Dark grey, no opacity
+        
+        // Add subtle shadow for depth
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.3
+        layer?.shadowOffset = CGSize(width: 0, height: 4)
+        layer?.shadowRadius = 12
+        layer?.masksToBounds = false
         
         addSubview(startButton)
+        addSubview(startLabel)
         addSubview(stopButton)
+        addSubview(stopLabel)
         addSubview(cancelButton)
+        addSubview(cancelLabel)
         addSubview(redrawButton)
+        addSubview(redrawLabel)
         addSubview(counterLabel)
     }
     required init?(coder: NSCoder) { fatalError() }
     
     override func layout() {
         super.layout()
-        let buttonWidth: CGFloat = 120
-        let buttonHeight: CGFloat = 38
-        let spacing: CGFloat = 16.5
-        let padding: CGFloat = 18.5
+        let buttonSize: CGFloat = 70 // Circular button diameter
+        let spacing: CGFloat = 30
+        let padding: CGFloat = 24
+        let labelHeight: CGFloat = 16
+        let labelTopMargin: CGFloat = 8
         let counterHeight: CGFloat = 20
-        let counterTopMargin: CGFloat = 8
         
-        // Position buttons at the top
-        let buttonY = padding + counterHeight + counterTopMargin
-        startButton.frame = NSRect(x: padding, y: buttonY, width: buttonWidth, height: buttonHeight)
-        stopButton.frame = NSRect(x: padding + buttonWidth + spacing, y: buttonY, width: buttonWidth, height: buttonHeight)
-        cancelButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 2, y: buttonY, width: buttonWidth, height: buttonHeight)
-        redrawButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 3, y: buttonY, width: buttonWidth, height: buttonHeight)
+        // Set rounded rectangle corner radius
+        layer?.cornerRadius = 24
         
-        // Position counter label below the buttons (centered across all buttons)
-        let totalButtonsWidth: CGFloat = buttonWidth * 4 + spacing * 3
-        let counterWidth: CGFloat = buttonWidth * 2 + spacing
-        let counterX = padding + (totalButtonsWidth - counterWidth) / 2
-        counterLabel.frame = NSRect(x: counterX, y: padding, width: counterWidth, height: counterHeight)
+        // Calculate vertical centering
+        // Total content height = buttons + gap + labels
+        let contentHeight = buttonSize + labelTopMargin + labelHeight
+        let counterBottomSpace = padding + counterHeight + 12 // Space for counter at bottom
+        let availableHeight = bounds.height - counterBottomSpace - padding
+        
+        // Center the buttons + labels vertically in available space
+        let buttonsY = counterBottomSpace + (availableHeight - contentHeight) / 2 + labelHeight + labelTopMargin
+        
+        // Position circular buttons horizontally centered
+        let totalButtonsWidth: CGFloat = buttonSize * 4 + spacing * 3
+        let startX = (bounds.width - totalButtonsWidth) / 2
+        
+        startButton.frame = NSRect(x: startX, y: buttonsY, width: buttonSize, height: buttonSize)
+        stopButton.frame = NSRect(x: startX + buttonSize + spacing, y: buttonsY, width: buttonSize, height: buttonSize)
+        redrawButton.frame = NSRect(x: startX + (buttonSize + spacing) * 2, y: buttonsY, width: buttonSize, height: buttonSize)
+        cancelButton.frame = NSRect(x: startX + (buttonSize + spacing) * 3, y: buttonsY, width: buttonSize, height: buttonSize)
+        
+        // Position labels BELOW buttons (lower Y coordinate)
+        let labelsY = buttonsY - labelTopMargin - labelHeight
+        startLabel.frame = NSRect(x: startX, y: labelsY, width: buttonSize, height: labelHeight)
+        stopLabel.frame = NSRect(x: startX + buttonSize + spacing, y: labelsY, width: buttonSize, height: labelHeight)
+        redrawLabel.frame = NSRect(x: startX + (buttonSize + spacing) * 2, y: labelsY, width: buttonSize, height: labelHeight)
+        cancelLabel.frame = NSRect(x: startX + (buttonSize + spacing) * 3, y: labelsY, width: buttonSize, height: labelHeight)
+        
+        // Style buttons as circles - Start is blue initially, others are grey
+        let buttonGrey = NSColor(white: 0.4, alpha: 1.0)
+        styleCircularButton(startButton, color: .systemBlue) // Start is primary action
+        styleCircularButton(stopButton, color: buttonGrey)
+        styleCircularButton(redrawButton, color: buttonGrey)
+        styleCircularButton(cancelButton, color: buttonGrey)
+        
+        // Position counter label at bottom center
+        let counterWidth: CGFloat = 200
+        counterLabel.frame = NSRect(x: (bounds.width - counterWidth) / 2, y: padding, width: counterWidth, height: counterHeight)
     }
     
     func updateRecordingState(isRecording: Bool) {
         startButton.isEnabled = !isRecording
-        startButton.title = isRecording ? "Recording..." : "Start"
         stopButton.isEnabled = isRecording
+        cancelButton.isEnabled = !isRecording
+        redrawButton.isEnabled = !isRecording
         
-        if !isRecording {
+        // Update button colors - active button changes color
+        let buttonGrey = NSColor(white: 0.4, alpha: 1.0)
+        let buttonBlue = NSColor.systemBlue
+        let buttonRed = NSColor.systemRed
+        
+        if isRecording {
+            // During recording: Stop button is red (active/danger), others are grey
+            styleCircularButton(startButton, color: buttonGrey)
+            styleCircularButton(stopButton, color: buttonRed)
+            styleCircularButton(cancelButton, color: buttonGrey)
+            styleCircularButton(redrawButton, color: buttonGrey)
+        } else {
+            // Not recording: Start button is blue (primary action)
+            styleCircularButton(startButton, color: buttonBlue)
+            styleCircularButton(stopButton, color: buttonGrey)
+            styleCircularButton(cancelButton, color: buttonGrey)
+            styleCircularButton(redrawButton, color: buttonGrey)
             counterLabel.stringValue = "0s | 0 frames"
         }
     }
@@ -606,6 +709,31 @@ final class ControlButtonsView: NSView {
     
     @objc private func redrawTapped() {
         onRedraw?()
+    }
+    
+    private func styleCircularButton(_ button: NSButton, color: NSColor) {
+        // Make button perfectly circular
+        let cornerRadius = button.frame.height / 2
+        button.layer?.cornerRadius = cornerRadius
+        button.layer?.backgroundColor = color.cgColor
+        
+        // Add shadow for depth
+        button.layer?.shadowColor = NSColor.black.cgColor
+        button.layer?.shadowOpacity = 0.3
+        button.layer?.shadowOffset = CGSize(width: 0, height: 3)
+        button.layer?.shadowRadius = 6
+        button.layer?.masksToBounds = false
+        
+        // Ensure icon is white and properly sized
+        button.contentTintColor = .white
+        if let originalImage = button.image {
+            let config = NSImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
+            let styledImage = originalImage.withSymbolConfiguration(config)
+            button.image = styledImage
+        }
+        
+        // Force redraw to ensure icon is visible
+        button.needsDisplay = true
     }
 }
 
