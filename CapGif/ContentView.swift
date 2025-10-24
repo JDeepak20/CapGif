@@ -329,6 +329,11 @@ private extension Recorder {
             guard let self = self else { return }
             guard self.isRecording, let start = self.startTime else { return }
             self.durationSeconds = Date().timeIntervalSince(start)
+            
+            // Update counter in the selection indicator overlay
+            let seconds = Int(self.durationSeconds)
+            let frameCount = self.frames.count
+            self.selectionIndicator?.updateCounter(seconds: seconds, frames: frameCount)
         }
         durationTimer = timer
         timer.resume()
@@ -421,8 +426,10 @@ final class SelectionIndicatorWindow {
         let buttonHeight: CGFloat = 38
         let spacing: CGFloat = 16.5
         let padding: CGFloat = 18.5
+        let counterHeight: CGFloat = 20
+        let counterTopMargin: CGFloat = 8
         let totalWidth = buttonWidth * 4 + spacing * 3 + padding * 2
-        let totalHeight = buttonHeight + padding * 2
+        let totalHeight = buttonHeight + counterHeight + counterTopMargin + padding * 2
         
         // Position below the selection rect
         var controlOrigin = CGPoint(x: rect.midX - totalWidth / 2, y: rect.minY - totalHeight - 8)
@@ -473,6 +480,12 @@ final class SelectionIndicatorWindow {
             controlView.updateRecordingState(isRecording: isRecording)
         }
     }
+    
+    func updateCounter(seconds: Int, frames: Int) {
+        if let controlView = controlWindow?.contentView as? ControlButtonsView {
+            controlView.updateCounter(seconds: seconds, frames: frames)
+        }
+    }
 
     func close() {
         if let escMonitor {
@@ -494,6 +507,14 @@ final class ControlButtonsView: NSView {
     var onStop: (() -> Void)?
     var onCancel: (() -> Void)?
     var onRedraw: (() -> Void)?
+    
+    private lazy var counterLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "0s | 0 frames")
+        label.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .center
+        return label
+    }()
     
     private lazy var startButton: NSButton = {
         let button = NSButton(title: "Start", target: self, action: #selector(startTapped))
@@ -530,6 +551,7 @@ final class ControlButtonsView: NSView {
         addSubview(stopButton)
         addSubview(cancelButton)
         addSubview(redrawButton)
+        addSubview(counterLabel)
     }
     required init?(coder: NSCoder) { fatalError() }
     
@@ -539,17 +561,35 @@ final class ControlButtonsView: NSView {
         let buttonHeight: CGFloat = 38
         let spacing: CGFloat = 16.5
         let padding: CGFloat = 18.5
+        let counterHeight: CGFloat = 20
+        let counterTopMargin: CGFloat = 8
         
-        startButton.frame = NSRect(x: padding, y: padding, width: buttonWidth, height: buttonHeight)
-        stopButton.frame = NSRect(x: padding + buttonWidth + spacing, y: padding, width: buttonWidth, height: buttonHeight)
-        cancelButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 2, y: padding, width: buttonWidth, height: buttonHeight)
-        redrawButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 3, y: padding, width: buttonWidth, height: buttonHeight)
+        // Position buttons at the top
+        let buttonY = padding + counterHeight + counterTopMargin
+        startButton.frame = NSRect(x: padding, y: buttonY, width: buttonWidth, height: buttonHeight)
+        stopButton.frame = NSRect(x: padding + buttonWidth + spacing, y: buttonY, width: buttonWidth, height: buttonHeight)
+        cancelButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 2, y: buttonY, width: buttonWidth, height: buttonHeight)
+        redrawButton.frame = NSRect(x: padding + (buttonWidth + spacing) * 3, y: buttonY, width: buttonWidth, height: buttonHeight)
+        
+        // Position counter label below the buttons (centered across all buttons)
+        let totalButtonsWidth: CGFloat = buttonWidth * 4 + spacing * 3
+        let counterWidth: CGFloat = buttonWidth * 2 + spacing
+        let counterX = padding + (totalButtonsWidth - counterWidth) / 2
+        counterLabel.frame = NSRect(x: counterX, y: padding, width: counterWidth, height: counterHeight)
     }
     
     func updateRecordingState(isRecording: Bool) {
         startButton.isEnabled = !isRecording
         startButton.title = isRecording ? "Recording..." : "Start"
         stopButton.isEnabled = isRecording
+        
+        if !isRecording {
+            counterLabel.stringValue = "0s | 0 frames"
+        }
+    }
+    
+    func updateCounter(seconds: Int, frames: Int) {
+        counterLabel.stringValue = "\(seconds)s | \(frames) frames"
     }
     
     @objc private func startTapped() {
